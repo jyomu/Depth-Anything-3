@@ -40,10 +40,11 @@ class DinoV2(nn.Module):
         self.rope_start = rope_start
         self.cat_token = cat_token
         self.use_transformers = use_transformers
-        
+
         if use_transformers:
             # Use Hugging Face Transformers backend
             from depth_anything_3.model.dinov2.dinov2_transformers import DinoV2Transformers
+
             self.pretrained = DinoV2Transformers(
                 name=name,
                 out_layers=out_layers,
