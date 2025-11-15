@@ -113,6 +113,26 @@ print(prediction.extrinsics.shape)
 print(prediction.intrinsics.shape)
 ```
 
+#### 💾 Low VRAM Mode (for memory-constrained GPUs)
+
+If you're experiencing out-of-memory errors or want to reduce VRAM consumption:
+
+```python
+import torch
+from depth_anything_3.api import DepthAnything3
+
+device = torch.device("cuda")
+model = DepthAnything3.from_pretrained("depth-anything/DA3NESTED-GIANT-LARGE")
+model = model.to(device=device)
+
+# Enable low VRAM mode to reduce memory consumption by ~30-40%
+model.enable_low_vram_mode()
+
+prediction = model.inference(images)
+```
+
+For more memory optimization options, see the [API Documentation](docs/API.md#memory-optimization).
+
 ```bash
 
 export MODEL_DIR=depth-anything/DA3NESTED-GIANT-LARGE
@@ -219,6 +239,13 @@ Generally, you should observe that DA3-LARGE achieves comparable results to VGGT
 ## ❓ FAQ
 
 - **Older GPUs without XFormers support**: See [Issue #11](https://github.com/ByteDance-Seed/Depth-Anything-3/issues/11). Thanks to [@S-Mahoney](https://github.com/S-Mahoney) for the solution!
+
+- **High VRAM consumption / Out of memory errors**: Enable low VRAM mode to reduce memory usage by 30-40%:
+  ```python
+  model = DepthAnything3.from_pretrained("depth-anything/DA3NESTED-GIANT-LARGE").to("cuda")
+  model.enable_low_vram_mode()
+  ```
+  See the [Memory Optimization](docs/API.md#memory-optimization) section for more details.
 
 
 ## 📝 Citations

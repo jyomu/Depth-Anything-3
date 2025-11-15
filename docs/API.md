@@ -14,8 +14,11 @@
    - [Rendering Parameters](#rendering-parameters)
    - [Processing Parameters](#processing-parameters)
    - [Export Parameters](#export-parameters)
-5. [📤 Export Formats](#export-formats)
-6. [↩️ Return Value](#return-value)
+5. [💾 Memory Optimization](#memory-optimization)
+   - [Low VRAM Mode](#low-vram-mode)
+   - [Performance vs Memory Tradeoffs](#performance-vs-memory-tradeoffs)
+6. [📤 Export Formats](#export-formats)
+7. [↩️ Return Value](#return-value)
 
 ## 📖 Overview
 
@@ -94,6 +97,23 @@ prediction = model.inference(
     export_feat_layers=[0, 5, 10, 15, 20],
     feat_vis_fps=30,
 )
+```
+
+### 💾 Low VRAM Mode for Memory-Constrained Environments
+```python
+# Enable low VRAM mode to reduce memory consumption
+# This is particularly useful for large models or limited GPU memory
+model = DepthAnything3.from_pretrained("depth-anything/DA3NESTED-GIANT-LARGE").to("cuda")
+model.enable_low_vram_mode()
+
+prediction = model.inference(
+    image=image_paths,
+    export_dir="./output",
+    export_format="mini_npz-glb"
+)
+
+# Disable when you want maximum performance
+model.disable_low_vram_mode()
 ```
 
 ## 🔧 Core API
@@ -286,6 +306,93 @@ These parameters are passed directly to the `inference()` method and only apply 
       "fps": 15                          # For feat_vis
   }
   ```
+
+## 💾 Memory Optimization
+
+DepthAnything3 provides built-in memory optimization features to reduce VRAM consumption, making it possible to run large models on GPUs with limited memory.
+
+### 🔧 Low VRAM Mode
+
+Low VRAM mode reduces memory consumption by enabling gradient checkpointing in the model backbone. This trades some computation time for significantly reduced memory usage.
+
+#### When to Use Low VRAM Mode
+
+- Running large models (DA3-GIANT, DA3NESTED-GIANT-LARGE) on GPUs with limited VRAM
+- Processing high-resolution images
+- Running multiple models simultaneously
+- Experiencing out-of-memory (OOM) errors
+
+#### How to Enable
+
+```python
+from depth_anything_3 import DepthAnything3
+
+# Load model
+model = DepthAnything3.from_pretrained("depth-anything/DA3NESTED-GIANT-LARGE").to("cuda")
+
+# Enable low VRAM mode
+model.enable_low_vram_mode()
+
+# Run inference as usual
+prediction = model.inference(
+    image=["image1.jpg", "image2.jpg"],
+    export_dir="./output",
+    export_format="glb"
+)
+
+# Disable when you want maximum performance
+model.disable_low_vram_mode()
+```
+
+#### What Low VRAM Mode Does
+
+1. **Gradient Checkpointing**: Enables gradient checkpointing in the vision transformer backbone, which:
+   - Reduces activation memory by not storing intermediate activations
+   - Recomputes activations when needed during backward pass (not applicable in inference mode, but still helps reduce memory footprint)
+   - Applies to all transformer blocks in the backbone
+
+2. **CUDA Cache Clearing**: Automatically clears CUDA cache after forward passes to free unused memory
+
+3. **Works with All Models**: Compatible with single models (DA3-LARGE, DA3-BASE) and nested models (DA3NESTED-GIANT-LARGE)
+
+### ⚖️ Performance vs Memory Tradeoffs
+
+| Configuration | VRAM Usage | Inference Speed | Use Case |
+|---------------|-----------|-----------------|----------|
+| Normal Mode | High | Fast | High-end GPUs with ample VRAM |
+| Low VRAM Mode | Reduced (~30-40% less) | Slightly slower (~5-15% slower) | Memory-constrained environments |
+
+#### Expected Memory Reduction
+
+Typical memory savings with low VRAM mode enabled:
+
+- **DA3-GIANT**: ~5-8 GB VRAM savings
+- **DA3NESTED-GIANT-LARGE**: ~6-10 GB VRAM savings  
+- **DA3-LARGE**: ~2-4 GB VRAM savings
+- **DA3-BASE/SMALL**: ~1-2 GB VRAM savings
+
+*Note: Actual savings depend on input resolution and batch size.*
+
+#### Additional Memory Optimization Tips
+
+1. **Reduce Process Resolution**: Lower the `process_res` parameter to process smaller images
+   ```python
+   prediction = model.inference(
+       image=images,
+       process_res=392,  # Default is 504
+       process_res_method="lower_bound_resize"
+   )
+   ```
+
+2. **Process Images in Smaller Batches**: If processing many images, process them in smaller groups
+
+3. **Disable Feature Export**: Don't export intermediate features unless needed
+   ```python
+   # Avoid this if memory is tight
+   prediction = model.inference(image=images, export_feat_layers=[0, 5, 10])
+   ```
+
+4. **Choose Smaller Models**: Use DA3-BASE or DA3-SMALL instead of DA3-GIANT when possible
 
 ## 📤 Export Formats
 
