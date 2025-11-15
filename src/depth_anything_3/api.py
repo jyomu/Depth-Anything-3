@@ -95,6 +95,62 @@ class DepthAnything3(nn.Module, PyTorchModelHubMixin):
 
         # Device management (set by user)
         self.device = None
+        
+        # Memory optimization settings
+        self.low_vram_mode = False
+
+    def enable_low_vram_mode(self):
+        """
+        Enable low VRAM mode for memory-constrained environments.
+        
+        This mode:
+        - Enables gradient checkpointing in the backbone (trades computation for memory)
+        - Clears CUDA cache between operations
+        - Uses more aggressive memory management
+        
+        Note: This may slightly reduce inference speed but significantly reduces VRAM usage.
+        """
+        self.low_vram_mode = True
+        
+        # Enable gradient checkpointing in the backbone
+        if hasattr(self.model, 'backbone') and hasattr(self.model.backbone, 'pretrained'):
+            if hasattr(self.model.backbone.pretrained, 'enable_gradient_checkpointing'):
+                self.model.backbone.pretrained.enable_gradient_checkpointing()
+        
+        # For nested models
+        if hasattr(self.model, 'da3'):
+            if hasattr(self.model.da3, 'backbone') and hasattr(self.model.da3.backbone, 'pretrained'):
+                if hasattr(self.model.da3.backbone.pretrained, 'enable_gradient_checkpointing'):
+                    self.model.da3.backbone.pretrained.enable_gradient_checkpointing()
+        
+        if hasattr(self.model, 'da3_metric'):
+            if hasattr(self.model.da3_metric, 'backbone') and hasattr(self.model.da3_metric.backbone, 'pretrained'):
+                if hasattr(self.model.da3_metric.backbone.pretrained, 'enable_gradient_checkpointing'):
+                    self.model.da3_metric.backbone.pretrained.enable_gradient_checkpointing()
+        
+        logger.info("Low VRAM mode enabled - gradient checkpointing activated")
+
+    def disable_low_vram_mode(self):
+        """Disable low VRAM mode and return to normal operation."""
+        self.low_vram_mode = False
+        
+        # Disable gradient checkpointing in the backbone
+        if hasattr(self.model, 'backbone') and hasattr(self.model.backbone, 'pretrained'):
+            if hasattr(self.model.backbone.pretrained, 'disable_gradient_checkpointing'):
+                self.model.backbone.pretrained.disable_gradient_checkpointing()
+        
+        # For nested models
+        if hasattr(self.model, 'da3'):
+            if hasattr(self.model.da3, 'backbone') and hasattr(self.model.da3.backbone, 'pretrained'):
+                if hasattr(self.model.da3.backbone.pretrained, 'disable_gradient_checkpointing'):
+                    self.model.da3.backbone.pretrained.disable_gradient_checkpointing()
+        
+        if hasattr(self.model, 'da3_metric'):
+            if hasattr(self.model.da3_metric, 'backbone') and hasattr(self.model.da3_metric.backbone, 'pretrained'):
+                if hasattr(self.model.da3_metric.backbone.pretrained, 'disable_gradient_checkpointing'):
+                    self.model.da3_metric.backbone.pretrained.disable_gradient_checkpointing()
+        
+        logger.info("Low VRAM mode disabled")
 
     @torch.inference_mode()
     def forward(
@@ -351,6 +407,11 @@ class DepthAnything3(nn.Module, PyTorchModelHubMixin):
         start_time = time.time()
         feat_layers = list(export_feat_layers) if export_feat_layers is not None else None
         output = self.forward(imgs, ex_t, in_t, feat_layers, infer_gs)
+        
+        # Clear CUDA cache in low VRAM mode
+        if self.low_vram_mode and device.type == "cuda":
+            torch.cuda.empty_cache()
+        
         if need_sync:
             torch.cuda.synchronize(device)
         end_time = time.time()

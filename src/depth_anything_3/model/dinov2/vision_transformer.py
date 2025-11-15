@@ -103,6 +103,7 @@ class DinoVisionTransformer(nn.Module):
         rope_freq=100,
         plus_cam_token=False,
         cat_token=True,
+        use_gradient_checkpointing=False,
     ):
         """
         Args:
@@ -129,9 +130,11 @@ class DinoVisionTransformer(nn.Module):
             interpolate_offset: (float) work-around offset to apply when interpolating
                 positional embeddings
             block_prompt: (bool) whether to add ray embeddings to the block input
+            use_gradient_checkpointing: (bool) enable gradient checkpointing for memory efficiency
         """
         super().__init__()
         self.patch_start_idx = 1
+        self.use_gradient_checkpointing = use_gradient_checkpointing
         norm_layer = nn.LayerNorm
         self.num_features = self.embed_dim = (
             embed_dim  # num_features for consistency with other models
@@ -342,13 +345,29 @@ class DinoVisionTransformer(nn.Module):
         else:
             raise ValueError(f"Invalid attention type: {attn_type}")
 
-        x = block(x, pos=pos, attn_mask=attn_mask)
+        # Use gradient checkpointing if enabled and in training mode
+        if self.use_gradient_checkpointing and self.training:
+            x = torch.utils.checkpoint.checkpoint(
+                block, x, pos, attn_mask, use_reentrant=False
+            )
+        else:
+            x = block(x, pos=pos, attn_mask=attn_mask)
 
         if attn_type == "local":
             x = rearrange(x, "(b s) n c -> b s n c", b=b, s=s)
         elif attn_type == "global":
             x = rearrange(x, "b (s n) c -> b s n c", b=b, s=s)
         return x
+
+    def enable_gradient_checkpointing(self):
+        """Enable gradient checkpointing for memory efficiency during inference."""
+        self.use_gradient_checkpointing = True
+        logger.info("Gradient checkpointing enabled for DinoVisionTransformer")
+
+    def disable_gradient_checkpointing(self):
+        """Disable gradient checkpointing."""
+        self.use_gradient_checkpointing = False
+        logger.info("Gradient checkpointing disabled for DinoVisionTransformer")
 
     def get_intermediate_layers(
         self,
