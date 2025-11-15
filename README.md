@@ -147,7 +147,34 @@ da3 auto assets/examples/SOH \
 
 ```
 
-The model architecture is defined in [`DepthAnything3Net`](src/depth_anything_3/model/da3.py), and specified with a Yaml config file located at [`src/depth_anything_3/configs`](src/depth_anything_3/configs). The input and output processing are handled by [`DepthAnything3`](src/depth_anything_3/api.py). To customize the model architecture, simply create a new config file (*e.g.*, `path/to/new/config`) as:
+The model architecture is defined in [`DepthAnything3Net`](src/depth_anything_3/model/da3.py), and specified with a Yaml config file located at [`src/depth_anything_3/configs`](src/depth_anything_3/configs). The input and output processing are handled by [`DepthAnything3`](src/depth_anything_3/api.py). 
+
+### 🤗 Using Hugging Face Transformers Backend
+
+Starting from this version, Depth Anything 3 supports using the official Hugging Face Transformers library for the DinoV2 backbone. This provides better integration with the Hugging Face ecosystem and ensures compatibility with the official DinoV2 models.
+
+To use the Transformers backend, you can either:
+
+1. **Use pre-configured transformers models:**
+```python
+from depth_anything_3.api import DepthAnything3
+
+# Load a model that uses Hugging Face Transformers backend
+model = DepthAnything3(model_name="da3-base-transformers")
+model = model.to("cuda")
+
+prediction = model.inference(["image1.jpg", "image2.jpg"])
+```
+
+Available transformers-based configurations:
+- `da3-small-transformers` - Uses `facebook/dinov2-small`
+- `da3-base-transformers` - Uses `facebook/dinov2-base`
+- `da3-large-transformers` - Uses `facebook/dinov2-large`
+- `da3-giant-transformers` - Uses `facebook/dinov2-giant`
+
+2. **Create a custom configuration with Transformers backend:**
+
+To customize the model architecture, simply create a new config file (*e.g.*, `path/to/new/config`) as:
 
 ```yaml
 __object__:
@@ -167,6 +194,7 @@ net:
   qknorm_start: 4
   rope_start: 4
   cat_token: True
+  use_transformers: True  # Enable Hugging Face Transformers backend
 
 head:
   __object__:
@@ -186,6 +214,12 @@ from depth_anything_3.cfg import create_object, load_config
 
 Model = create_object(load_config("path/to/new/config"))
 ```
+
+**Benefits of using Transformers backend:**
+- 🔄 Seamless integration with Hugging Face Hub
+- 🎯 Official DinoV2 models with guaranteed compatibility
+- 🔧 Access to Transformers ecosystem tools and optimizations
+- 📦 Easier model sharing and deployment
 
 
 
