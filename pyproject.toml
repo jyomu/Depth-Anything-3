@@ -18,6 +18,7 @@ dependencies = [
     "torchvision",
     "einops",
     "huggingface_hub",
+    "transformers>=4.48.0",
     "imageio",
     "numpy<2",
     "opencv-python",

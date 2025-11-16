@@ -28,6 +28,7 @@ class DinoV2(nn.Module):
         qknorm_start: int = -1,
         rope_start: int = -1,
         cat_token: bool = True,
+        use_transformers: bool = False,
         **kwargs,
     ):
         super().__init__()
@@ -38,27 +39,48 @@ class DinoV2(nn.Module):
         self.qknorm_start = qknorm_start
         self.rope_start = rope_start
         self.cat_token = cat_token
-        encoder_map = {
-            "vits": vit_small,
-            "vitb": vit_base,
-            "vitl": vit_large,
-            "vitg": vit_giant2,
-        }
-        encoder_fn = encoder_map[self.name]
-        ffn_layer = "swiglufused" if self.name == "vitg" else "mlp"
-        self.pretrained = encoder_fn(
-            img_size=518,
-            patch_size=14,
-            ffn_layer=ffn_layer,
-            alt_start=alt_start,
-            qknorm_start=qknorm_start,
-            rope_start=rope_start,
-            cat_token=cat_token,
-        )
+        self.use_transformers = use_transformers
+
+        if use_transformers:
+            # Use Hugging Face Transformers backend
+            from depth_anything_3.model.dinov2.dinov2_transformers import DinoV2Transformers
+
+            self.pretrained = DinoV2Transformers(
+                name=name,
+                out_layers=out_layers,
+                alt_start=alt_start,
+                qknorm_start=qknorm_start,
+                rope_start=rope_start,
+                cat_token=cat_token,
+            )
+        else:
+            # Use custom implementation
+            encoder_map = {
+                "vits": vit_small,
+                "vitb": vit_base,
+                "vitl": vit_large,
+                "vitg": vit_giant2,
+            }
+            encoder_fn = encoder_map[self.name]
+            ffn_layer = "swiglufused" if self.name == "vitg" else "mlp"
+            self.pretrained = encoder_fn(
+                img_size=518,
+                patch_size=14,
+                ffn_layer=ffn_layer,
+                alt_start=alt_start,
+                qknorm_start=qknorm_start,
+                rope_start=rope_start,
+                cat_token=cat_token,
+            )
 
     def forward(self, x, **kwargs):
-        return self.pretrained.get_intermediate_layers(
-            x,
-            self.out_layers,
-            **kwargs,
-        )
+        if self.use_transformers:
+            # Transformers backend returns the correct format directly
+            return self.pretrained(x, **kwargs)
+        else:
+            # Custom backend uses get_intermediate_layers
+            return self.pretrained.get_intermediate_layers(
+                x,
+                self.out_layers,
+                **kwargs,
+            )
