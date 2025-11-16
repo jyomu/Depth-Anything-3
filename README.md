@@ -193,6 +193,8 @@ Model = create_object(load_config("path/to/new/config"))
 
 - 🖥️ [Command Line Interface](docs/CLI.md)
 - 📑 [Python API](docs/API.md)
+- 🧠 [VRAM Optimization Report](docs/VRAM_OPTIMIZATION_REPORT.md) - Guide for scene reconstruction with <12GB VRAM
+- 🧠 [VRAM最適化レポート (日本語)](docs/VRAM_OPTIMIZATION_REPORT_JP.md) - 12GB未満でのシーン復元ガイド
 <!-- - 🏁 [Visual Geometry Benchmark](docs/BENCHMARK.md) -->
 
 ## 🗂️ Model Cards
