@@ -21,3 +21,4 @@ moviepy
 plyfile
 pillow_heif
 safetensors
+accelerate>=0.20.0

@@ -38,6 +38,13 @@ from depth_anything_3.utils.io.output_processor import OutputProcessor
 from depth_anything_3.utils.logger import logger
 from depth_anything_3.utils.pose_align import align_poses_umeyama
 
+try:
+    from accelerate import Accelerator
+    ACCELERATE_AVAILABLE = True
+except ImportError:
+    ACCELERATE_AVAILABLE = False
+    Accelerator = None
+
 torch.backends.cudnn.benchmark = False
 # logger.info("CUDNN Benchmark Disabled")
 
@@ -56,6 +63,7 @@ class DepthAnything3(nn.Module, PyTorchModelHubMixin):
     - Hugging Face Hub integration via PyTorchModelHubMixin
     - Support for multiple model presets (vitb, vitg, nested variants)
     - Automatic mixed precision inference
+    - Optional Hugging Face Accelerate integration for optimized inference
     - Export capabilities for various formats (GLB, PLY, NPZ, etc.)
     - Camera pose estimation and metric depth scaling
 
@@ -66,28 +74,64 @@ class DepthAnything3(nn.Module, PyTorchModelHubMixin):
         # Or create with specific preset
         model = DepthAnything3(preset="vitg")
 
+        # Use with Accelerate for optimized inference
+        model = DepthAnything3(preset="vitg", use_accelerate=True)
+
         # Run inference
         prediction = model.inference(images, export_dir="output", export_format="glb")
     """
 
     _commit_hash: str | None = None  # Set by mixin when loading from Hub
 
-    def __init__(self, model_name: str = "da3-large", **kwargs):
+    def __init__(self, model_name: str = "da3-large", use_accelerate: bool = False, **kwargs):
         """
         Initialize DepthAnything3 with specified preset.
 
         Args:
         model_name: The name of the model preset to use.
                     Examples: 'da3-giant', 'da3-large', 'da3metric-large', 'da3nested-giant-large'.
-        **kwargs: Additional keyword arguments (currently unused).
+        use_accelerate: Whether to use Hugging Face Accelerate for optimized inference.
+                        Provides automatic mixed precision, better memory management,
+                        and multi-GPU support. Default: False for backward compatibility.
+        **kwargs: Additional keyword arguments passed to Accelerator if use_accelerate=True.
         """
         super().__init__()
         self.model_name = model_name
+        self.use_accelerate = use_accelerate
+        self.accelerator = None
 
         # Build the underlying network
         self.config = load_config(MODEL_REGISTRY[self.model_name])
         self.model = create_object(self.config)
         self.model.eval()
+
+        # Initialize Accelerate if requested
+        if self.use_accelerate:
+            if not ACCELERATE_AVAILABLE:
+                logger.warning(
+                    "Accelerate is not available. Install it with: pip install accelerate. "
+                    "Falling back to standard inference."
+                )
+                self.use_accelerate = False
+            else:
+                # Initialize Accelerator with sensible defaults for inference
+                accelerator_kwargs = {
+                    "mixed_precision": "fp16" if not torch.cuda.is_bf16_supported() else "bf16",
+                    "device_placement": True,
+                }
+                # Allow user to override defaults
+                accelerator_kwargs.update(kwargs)
+                
+                try:
+                    self.accelerator = Accelerator(**accelerator_kwargs)
+                    self.model = self.accelerator.prepare(self.model)
+                    logger.info(
+                        f"Accelerate initialized with mixed_precision={accelerator_kwargs['mixed_precision']}"
+                    )
+                except Exception as e:
+                    logger.warning(f"Failed to initialize Accelerate: {e}. Falling back to standard inference.")
+                    self.use_accelerate = False
+                    self.accelerator = None
 
         # Initialize processors
         self.input_processor = InputProcessor()
@@ -117,11 +161,16 @@ class DepthAnything3(nn.Module, PyTorchModelHubMixin):
         Returns:
             Dictionary containing model predictions
         """
-        # Determine optimal autocast dtype
-        autocast_dtype = torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16
-        with torch.no_grad():
-            with torch.autocast(device_type=image.device.type, dtype=autocast_dtype):
+        # When using Accelerate, it handles mixed precision automatically
+        if self.use_accelerate and self.accelerator is not None:
+            with torch.no_grad():
                 return self.model(image, extrinsics, intrinsics, export_feat_layers, infer_gs)
+        else:
+            # Standard inference with manual autocast
+            autocast_dtype = torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16
+            with torch.no_grad():
+                with torch.autocast(device_type=image.device.type, dtype=autocast_dtype):
+                    return self.model(image, extrinsics, intrinsics, export_feat_layers, infer_gs)
 
     def inference(
         self,
@@ -400,6 +449,11 @@ class DepthAnything3(nn.Module, PyTorchModelHubMixin):
             ValueError: If no tensors are found in the model
         """
         if self.device is not None:
+            return self.device
+
+        # If using Accelerate, get device from accelerator
+        if self.use_accelerate and self.accelerator is not None:
+            self.device = self.accelerator.device
             return self.device
 
         # Find device from parameters
