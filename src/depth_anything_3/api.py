@@ -121,15 +121,19 @@ class DepthAnything3(nn.Module, PyTorchModelHubMixin):
                 }
                 # Allow user to override defaults
                 accelerator_kwargs.update(kwargs)
-                
+
                 try:
                     self.accelerator = Accelerator(**accelerator_kwargs)
                     self.model = self.accelerator.prepare(self.model)
                     logger.info(
-                        f"Accelerate initialized with mixed_precision={accelerator_kwargs['mixed_precision']}"
+                        f"Accelerate initialized with "
+                        f"mixed_precision={accelerator_kwargs['mixed_precision']}"
                     )
                 except Exception as e:
-                    logger.warning(f"Failed to initialize Accelerate: {e}. Falling back to standard inference.")
+                    logger.warning(
+                        f"Failed to initialize Accelerate: {e}. "
+                        f"Falling back to standard inference."
+                    )
                     self.use_accelerate = False
                     self.accelerator = None
 
