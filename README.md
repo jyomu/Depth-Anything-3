@@ -113,6 +113,19 @@ print(prediction.extrinsics.shape)
 print(prediction.intrinsics.shape)
 ```
 
+**💡 Performance Tip:** For faster inference, use Hugging Face Accelerate:
+```python
+# Enable Accelerate for automatic mixed precision and optimization
+model = DepthAnything3.from_pretrained(
+    "depth-anything/DA3NESTED-GIANT-LARGE",
+    use_accelerate=True
+)
+model = model.to(device=device)
+# Rest of the code remains the same
+```
+See [Accelerate Integration](docs/ACCELERATE.md) for more details.
+
+
 ```bash
 
 export MODEL_DIR=depth-anything/DA3NESTED-GIANT-LARGE
