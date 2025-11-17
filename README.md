@@ -193,6 +193,7 @@ Model = create_object(load_config("path/to/new/config"))
 
 - 🖥️ [Command Line Interface](docs/CLI.md)
 - 📑 [Python API](docs/API.md)
+- 💾 [Memory Management](docs/MEMORY_MANAGEMENT.md)
 <!-- - 🏁 [Visual Geometry Benchmark](docs/BENCHMARK.md) -->
 
 ## 🗂️ Model Cards
@@ -219,6 +220,7 @@ Generally, you should observe that DA3-LARGE achieves comparable results to VGGT
 ## ❓ FAQ
 
 - **Older GPUs without XFormers support**: See [Issue #11](https://github.com/ByteDance-Seed/Depth-Anything-3/issues/11). Thanks to [@S-Mahoney](https://github.com/S-Mahoney) for the solution!
+- **Out of Memory (OOM) errors with many frames**: See [Memory Management Guide](docs/MEMORY_MANAGEMENT.md) for detailed explanations and solutions. TL;DR: Reduce the number of frames processed at once, use smaller model variants, or lower the processing resolution.
 
 
 ## 📝 Citations
