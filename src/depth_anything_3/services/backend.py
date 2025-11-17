@@ -93,21 +93,41 @@ class TaskStatus(BaseModel):
     video_path: Optional[str] = None  # Source video path
 
 
-class ModelBackend:
-    """Model backend service with persistent model loading."""
+class BaseModelLoader:
+    """
+    Base class for unified model loading interface.
+    
+    Provides common functionality for model loading, device management,
+    status tracking, and resource management across different execution platforms.
+    """
 
     def __init__(self, model_dir: str, device: str = "cuda"):
+        """
+        Initialize the model loader.
+        
+        Args:
+            model_dir: Path to the model directory or HuggingFace model ID
+            device: Device to load the model on (e.g., 'cuda', 'cpu')
+        """
         self.model_dir = model_dir
         self.device = device
         self.model = None
         self.model_loaded = False
         self.load_time = None
-        self.load_start_time = None  # Time when model loading started
-        self.load_completed_time = None  # Time when model loading completed
+        self.load_start_time = None
+        self.load_completed_time = None
         self.last_used = None
 
     def load_model(self):
-        """Load model if not already loaded."""
+        """
+        Load model if not already loaded.
+        
+        Returns:
+            Loaded model instance
+            
+        Raises:
+            Exception: If model loading fails
+        """
         if self.model_loaded and self.model is not None:
             self.last_used = time.time()
             return self.model
@@ -133,15 +153,35 @@ class ModelBackend:
             raise e
 
     def get_model(self):
-        """Get model, loading if necessary."""
+        """
+        Get model, loading if necessary.
+        
+        Returns:
+            Model instance
+        """
         if not self.model_loaded:
             return self.load_model()
         self.last_used = time.time()
         return self.model
 
+    def unload_model(self):
+        """Unload model and free resources."""
+        self.model = None
+        self.model_loaded = False
+        cleanup_cuda_memory()
+
+    def reload_model(self):
+        """Reload the model."""
+        self.unload_model()
+        return self.load_model()
+
     def get_status(self) -> Dict[str, Any]:
-        """Get backend status information."""
-        # Calculate uptime from when model loading completed
+        """
+        Get model loader status information.
+        
+        Returns:
+            Dictionary containing status information
+        """
         uptime = 0
         if self.model_loaded and self.load_completed_time:
             uptime = time.time() - self.load_completed_time
@@ -154,6 +194,20 @@ class ModelBackend:
             "last_used": self.last_used,
             "uptime": uptime,
         }
+
+
+class ModelBackend(BaseModelLoader):
+    """Model backend service with persistent model loading for HTTP API."""
+
+    def __init__(self, model_dir: str, device: str = "cuda"):
+        """
+        Initialize the model backend.
+        
+        Args:
+            model_dir: Path to the model directory or HuggingFace model ID
+            device: Device to load the model on (e.g., 'cuda', 'cpu')
+        """
+        super().__init__(model_dir, device)
 
 
 # Global backend instance
