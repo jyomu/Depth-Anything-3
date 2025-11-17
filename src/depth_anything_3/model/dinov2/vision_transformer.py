@@ -291,43 +291,140 @@ class DinoVisionTransformer(nn.Module):
                 pos_nodiff = torch.cat([pos_special, pos_nodiff], dim=2)
         return pos, pos_nodiff
 
-    def _get_intermediate_layers_not_chunked(self, x, n=1, export_feat_layers=[], **kwargs):
+    def _get_intermediate_layers_not_chunked(
+        self, x, n=1, export_feat_layers=[], frame_batch_size=None, **kwargs
+    ):
         B, S, _, H, W = x.shape
-        x = self.prepare_tokens_with_masks(x)
-        output, total_block_len, aux_output = [], len(self.blocks), []
-        blocks_to_take = range(total_block_len - n, total_block_len) if isinstance(n, int) else n
-        pos, pos_nodiff = self._prepare_rope(B, S, H, W, x.device)
 
-        for i, blk in enumerate(self.blocks):
-            if i < self.rope_start or self.rope is None:
-                g_pos, l_pos = None, None
-            else:
-                g_pos = pos_nodiff
-                l_pos = pos
-            if self.alt_start != -1 and i == self.alt_start:
-                if kwargs.get("cam_token", None) is not None:
-                    logger.info("Using camera conditions provided by the user")
-                    cam_token = kwargs.get("cam_token")
+        # If frame_batch_size is not specified or S <= frame_batch_size,
+        # process all frames together
+        if frame_batch_size is None or S <= frame_batch_size:
+            x = self.prepare_tokens_with_masks(x)
+            output, total_block_len, aux_output = [], len(self.blocks), []
+            blocks_to_take = (
+                range(total_block_len - n, total_block_len)
+                if isinstance(n, int)
+                else n
+            )
+            pos, pos_nodiff = self._prepare_rope(B, S, H, W, x.device)
+
+            for i, blk in enumerate(self.blocks):
+                if i < self.rope_start or self.rope is None:
+                    g_pos, l_pos = None, None
                 else:
-                    ref_token = self.camera_token[:, :1].expand(B, -1, -1)
-                    src_token = self.camera_token[:, 1:].expand(B, S - 1, -1)
-                    cam_token = torch.cat([ref_token, src_token], dim=1)
-                x[:, :, 0] = cam_token
+                    g_pos = pos_nodiff
+                    l_pos = pos
+                if self.alt_start != -1 and i == self.alt_start:
+                    if kwargs.get("cam_token", None) is not None:
+                        logger.info("Using camera conditions provided by the user")
+                        cam_token = kwargs.get("cam_token")
+                    else:
+                        ref_token = self.camera_token[:, :1].expand(B, -1, -1)
+                        src_token = self.camera_token[:, 1:].expand(B, S - 1, -1)
+                        cam_token = torch.cat([ref_token, src_token], dim=1)
+                    x[:, :, 0] = cam_token
 
-            if self.alt_start != -1 and i >= self.alt_start and i % 2 == 1:
-                x = self.process_attention(
-                    x, blk, "global", pos=g_pos, attn_mask=kwargs.get("attn_mask", None)
-                )
-            else:
-                x = self.process_attention(x, blk, "local", pos=l_pos)
-                local_x = x
+                if self.alt_start != -1 and i >= self.alt_start and i % 2 == 1:
+                    x = self.process_attention(
+                        x, blk, "global", pos=g_pos, attn_mask=kwargs.get("attn_mask", None)
+                    )
+                else:
+                    x = self.process_attention(x, blk, "local", pos=l_pos)
+                    local_x = x
 
-            if i in blocks_to_take:
-                out_x = torch.cat([local_x, x], dim=-1) if self.cat_token else x
-                output.append((out_x[:, :, 0], out_x))
-            if i in export_feat_layers:
-                aux_output.append(x)
-        return output, aux_output
+                if i in blocks_to_take:
+                    out_x = torch.cat([local_x, x], dim=-1) if self.cat_token else x
+                    output.append((out_x[:, :, 0], out_x))
+                if i in export_feat_layers:
+                    aux_output.append(x)
+            return output, aux_output
+
+        # Batch processing: split frames into chunks
+        # Note: This processes each batch independently through global attention
+        # layers, which reduces cross-batch frame consistency but significantly
+        # reduces memory usage. For best quality, use frame_batch_size=None or
+        # set it >= total number of frames.
+        logger.info(
+            f"Processing {S} frames in batches of {frame_batch_size} "
+            "(may reduce cross-frame consistency)"
+        )
+
+        # Split input into batches
+        num_batches = (S + frame_batch_size - 1) // frame_batch_size
+        all_outputs = []
+        all_aux_outputs = []
+
+        for batch_idx in range(num_batches):
+            start_idx = batch_idx * frame_batch_size
+            end_idx = min(start_idx + frame_batch_size, S)
+            x_batch = x[:, start_idx:end_idx]
+
+            # Process this batch
+            S_batch = x_batch.shape[1]
+            x_batch = self.prepare_tokens_with_masks(x_batch)
+            output, total_block_len, aux_output = [], len(self.blocks), []
+            blocks_to_take = (
+                range(total_block_len - n, total_block_len)
+                if isinstance(n, int)
+                else n
+            )
+            pos, pos_nodiff = self._prepare_rope(B, S_batch, H, W, x_batch.device)
+
+            for i, blk in enumerate(self.blocks):
+                if i < self.rope_start or self.rope is None:
+                    g_pos, l_pos = None, None
+                else:
+                    g_pos = pos_nodiff
+                    l_pos = pos
+                if self.alt_start != -1 and i == self.alt_start:
+                    if kwargs.get("cam_token", None) is not None:
+                        # Extract the corresponding batch of camera tokens
+                        cam_token_full = kwargs.get("cam_token")
+                        cam_token = cam_token_full[:, start_idx:end_idx]
+                    else:
+                        ref_token = self.camera_token[:, :1].expand(B, -1, -1)
+                        src_token = self.camera_token[:, 1:].expand(B, S_batch - 1, -1)
+                        cam_token = torch.cat([ref_token, src_token], dim=1)
+                    x_batch[:, :, 0] = cam_token
+
+                if self.alt_start != -1 and i >= self.alt_start and i % 2 == 1:
+                    x_batch = self.process_attention(
+                        x_batch, blk, "global", pos=g_pos, attn_mask=kwargs.get("attn_mask", None)
+                    )
+                else:
+                    x_batch = self.process_attention(x_batch, blk, "local", pos=l_pos)
+                    local_x = x_batch
+
+                if i in blocks_to_take:
+                    out_x = torch.cat([local_x, x_batch], dim=-1) if self.cat_token else x_batch
+                    output.append((out_x[:, :, 0], out_x))
+                if i in export_feat_layers:
+                    aux_output.append(x_batch)
+
+            all_outputs.append(output)
+            all_aux_outputs.append(aux_output)
+
+        # Concatenate outputs from all batches
+        final_outputs = []
+        for layer_idx in range(len(all_outputs[0])):
+            # Concatenate camera tokens and features along the S dimension
+            cam_tokens = [batch_out[layer_idx][0] for batch_out in all_outputs]
+            features = [batch_out[layer_idx][1] for batch_out in all_outputs]
+
+            combined_cam = torch.cat(cam_tokens, dim=1)  # (B, S_total, ...)
+            combined_feat = torch.cat(features, dim=1)   # (B, S_total, ...)
+
+            final_outputs.append((combined_cam, combined_feat))
+
+        # Concatenate auxiliary outputs
+        final_aux_outputs = []
+        if len(all_aux_outputs[0]) > 0:
+            for aux_idx in range(len(all_aux_outputs[0])):
+                aux_feats = [batch_aux[aux_idx] for batch_aux in all_aux_outputs]
+                combined_aux = torch.cat(aux_feats, dim=1)  # (B, S_total, ...)
+                final_aux_outputs.append(combined_aux)
+
+        return final_outputs, final_aux_outputs
 
     def process_attention(self, x, block, attn_type="global", pos=None, attn_mask=None):
         b, s, n = x.shape[:3]
@@ -355,10 +452,15 @@ class DinoVisionTransformer(nn.Module):
         x: torch.Tensor,
         n: Union[int, Sequence] = 1,  # Layers or n last layers to take
         export_feat_layers: List[int] = [],
+        frame_batch_size: int | None = None,
         **kwargs,
     ) -> Tuple[Union[torch.Tensor, Tuple[torch.Tensor]]]:
         outputs, aux_outputs = self._get_intermediate_layers_not_chunked(
-            x, n, export_feat_layers=export_feat_layers, **kwargs
+            x,
+            n,
+            export_feat_layers=export_feat_layers,
+            frame_batch_size=frame_batch_size,
+            **kwargs,
         )
         camera_tokens = [out[0] for out in outputs]
         if outputs[0][1].shape[-1] == self.embed_dim:

@@ -104,6 +104,7 @@ class DepthAnything3(nn.Module, PyTorchModelHubMixin):
         intrinsics: torch.Tensor | None = None,
         export_feat_layers: list[int] | None = None,
         infer_gs: bool = False,
+        frame_batch_size: int | None = None,
     ) -> dict[str, torch.Tensor]:
         """
         Forward pass through the model.
@@ -113,6 +114,8 @@ class DepthAnything3(nn.Module, PyTorchModelHubMixin):
             extrinsics: Optional camera extrinsics with shape ``(B, N, 4, 4)``.
             intrinsics: Optional camera intrinsics with shape ``(B, N, 3, 3)``.
             export_feat_layers: Layer indices to return intermediate features for.
+            infer_gs: Enable the 3D Gaussian branch.
+            frame_batch_size: Maximum number of frames to process simultaneously.
 
         Returns:
             Dictionary containing model predictions
@@ -121,7 +124,9 @@ class DepthAnything3(nn.Module, PyTorchModelHubMixin):
         autocast_dtype = torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16
         with torch.no_grad():
             with torch.autocast(device_type=image.device.type, dtype=autocast_dtype):
-                return self.model(image, extrinsics, intrinsics, export_feat_layers, infer_gs)
+                return self.model(
+                    image, extrinsics, intrinsics, export_feat_layers, infer_gs, frame_batch_size
+                )
 
     def inference(
         self,
@@ -135,6 +140,7 @@ class DepthAnything3(nn.Module, PyTorchModelHubMixin):
         render_hw: tuple[int, int] | None = None,
         process_res: int = 504,
         process_res_method: str = "upper_bound_resize",
+        frame_batch_size: int | None = None,
         export_dir: str | None = None,
         export_format: str = "mini_npz",
         export_feat_layers: Sequence[int] | None = None,
@@ -161,6 +167,9 @@ class DepthAnything3(nn.Module, PyTorchModelHubMixin):
             render_hw: Optional render resolution for Gaussian video export
             process_res: Processing resolution
             process_res_method: Resize method for processing
+            frame_batch_size: Maximum number of frames to process simultaneously
+                            (None = all frames). Use this to reduce memory usage when
+                            processing many frames.
             export_dir: Directory to export results
             export_format: Export format (mini_npz, npz, glb, ply, gs, gs_video)
             export_feat_layers: Layer indices to export intermediate features from
@@ -190,7 +199,9 @@ class DepthAnything3(nn.Module, PyTorchModelHubMixin):
         # Run model forward pass
         export_feat_layers = list(export_feat_layers) if export_feat_layers is not None else []
 
-        raw_output = self._run_model_forward(imgs, ex_t_norm, in_t, export_feat_layers, infer_gs)
+        raw_output = self._run_model_forward(
+            imgs, ex_t_norm, in_t, export_feat_layers, infer_gs, frame_batch_size
+        )
 
         # Convert raw output to prediction
         prediction = self._convert_to_prediction(raw_output)
@@ -342,6 +353,7 @@ class DepthAnything3(nn.Module, PyTorchModelHubMixin):
         in_t: torch.Tensor | None,
         export_feat_layers: Sequence[int] | None = None,
         infer_gs: bool = False,
+        frame_batch_size: int | None = None,
     ) -> dict[str, torch.Tensor]:
         """Run model forward pass."""
         device = imgs.device
@@ -350,7 +362,7 @@ class DepthAnything3(nn.Module, PyTorchModelHubMixin):
             torch.cuda.synchronize(device)
         start_time = time.time()
         feat_layers = list(export_feat_layers) if export_feat_layers is not None else None
-        output = self.forward(imgs, ex_t, in_t, feat_layers, infer_gs)
+        output = self.forward(imgs, ex_t, in_t, feat_layers, infer_gs, frame_batch_size)
         if need_sync:
             torch.cuda.synchronize(device)
         end_time = time.time()

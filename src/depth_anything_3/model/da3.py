@@ -103,6 +103,7 @@ class DepthAnything3Net(nn.Module):
         intrinsics: torch.Tensor | None = None,
         export_feat_layers: list[int] | None = [],
         infer_gs: bool = False,
+        frame_batch_size: int | None = None,
     ) -> Dict[str, torch.Tensor]:
         """
         Forward pass through the network.
@@ -111,7 +112,9 @@ class DepthAnything3Net(nn.Module):
             x: Input images (B, N, 3, H, W)
             extrinsics: Camera extrinsics (B, N, 4, 4) - unused
             intrinsics: Camera intrinsics (B, N, 3, 3) - unused
-            feat_layers: List of layer indices to extract features from
+            export_feat_layers: List of layer indices to extract features from
+            infer_gs: Enable the 3D Gaussian branch
+            frame_batch_size: Maximum number of frames to process simultaneously
 
         Returns:
             Dictionary containing predictions and auxiliary features
@@ -124,7 +127,10 @@ class DepthAnything3Net(nn.Module):
             cam_token = None
 
         feats, aux_feats = self.backbone(
-            x, cam_token=cam_token, export_feat_layers=export_feat_layers
+            x,
+            cam_token=cam_token,
+            export_feat_layers=export_feat_layers,
+            frame_batch_size=frame_batch_size,
         )
         # feats = [[item for item in feat] for feat in feats]
         H, W = x.shape[-2], x.shape[-1]
@@ -280,6 +286,7 @@ class NestedDepthAnything3Net(nn.Module):
         intrinsics: torch.Tensor | None = None,
         export_feat_layers: list[int] | None = [],
         infer_gs: bool = False,
+        frame_batch_size: int | None = None,
     ) -> Dict[str, torch.Tensor]:
         """
         Forward pass through both branches with metric scaling alignment.
@@ -288,17 +295,25 @@ class NestedDepthAnything3Net(nn.Module):
             x: Input images (B, N, 3, H, W)
             extrinsics: Camera extrinsics (B, N, 4, 4) - unused
             intrinsics: Camera intrinsics (B, N, 3, 3) - unused
-            feat_layers: List of layer indices to extract features from
-            metric_feat: Whether to use metric features (unused)
+            export_feat_layers: List of layer indices to extract features from
+            infer_gs: Enable the 3D Gaussian branch
+            frame_batch_size: Maximum number of frames to process simultaneously
 
         Returns:
             Dictionary containing aligned depth predictions and camera parameters
         """
         # Get predictions from both branches
         output = self.da3(
-            x, extrinsics, intrinsics, export_feat_layers=export_feat_layers, infer_gs=infer_gs
+            x,
+            extrinsics,
+            intrinsics,
+            export_feat_layers=export_feat_layers,
+            infer_gs=infer_gs,
+            frame_batch_size=frame_batch_size,
         )
-        metric_output = self.da3_metric(x, infer_gs=infer_gs)
+        metric_output = self.da3_metric(
+            x, infer_gs=infer_gs, frame_batch_size=frame_batch_size
+        )
 
         # Apply metric scaling and alignment
         output = self._apply_metric_scaling(output, metric_output)
