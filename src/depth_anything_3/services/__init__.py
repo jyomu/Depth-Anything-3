@@ -16,9 +16,14 @@
 Services module for Depth Anything 3.
 """
 
-from depth_anything_3.services.backend import create_app, start_server
+from depth_anything_3.services.backend import BaseModelLoader, ModelBackend, create_app, start_server
+from depth_anything_3.services.inference_service import InferenceService, run_inference
 
 __all__ = [
-    start_server,
-    create_app,
+    "BaseModelLoader",
+    "ModelBackend",
+    "InferenceService",
+    "start_server",
+    "create_app",
+    "run_inference",
 ]
