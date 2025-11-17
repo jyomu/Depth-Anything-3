@@ -25,20 +25,28 @@ from typing import Any, Dict, Optional, Tuple
 import numpy as np
 import torch
 
-from depth_anything_3.api import DepthAnything3
+from depth_anything_3.services.backend import BaseModelLoader
 from depth_anything_3.utils.memory import cleanup_cuda_memory
 from depth_anything_3.utils.export.glb import export_to_glb
 from depth_anything_3.utils.export.gs import export_to_gs_video
 
 
-class ModelInference:
+class ModelInference(BaseModelLoader):
     """
     Handles model inference and data processing for Depth Anything 3.
     """
 
     def __init__(self):
         """Initialize the model inference handler."""
+        # Don't call super().__init__ yet since we don't have model_dir
         self.model = None
+        self.model_loaded = False
+        self.model_dir = None
+        self.device = None
+        self.load_time = None
+        self.load_start_time = None
+        self.load_completed_time = None
+        self.last_used = None
 
     def initialize_model(self, device: str = "cuda") -> None:
         """
@@ -47,15 +55,22 @@ class ModelInference:
         Args:
             device: Device to load the model on
         """
+        # Get model directory from environment variable or use default
+        model_dir = os.environ.get(
+            "DA3_MODEL_DIR", "/dev/shm/da3_models/DA3HF-VITG-METRIC_VITL"
+        )
+
+        # Initialize base class if not yet initialized
+        if self.model_dir is None:
+            self.model_dir = model_dir
+            self.device = device
+
+        # Load or move model to device
         if self.model is None:
-            # Get model directory from environment variable or use default
-            model_dir = os.environ.get(
-                "DA3_MODEL_DIR", "/dev/shm/da3_models/DA3HF-VITG-METRIC_VITL"
-            )
-            self.model = DepthAnything3.from_pretrained(model_dir)
-            self.model = self.model.to(device)
+            self.load_model()
         else:
             self.model = self.model.to(device)
+            self.device = device
 
         self.model.eval()
 

@@ -22,22 +22,33 @@ import numpy as np
 import requests
 import typer
 
-from ..api import DepthAnything3
+from .backend import BaseModelLoader
 
 
-class InferenceService:
+class InferenceService(BaseModelLoader):
     """Unified inference service class"""
 
     def __init__(self, model_dir: str, device: str = "cuda"):
-        self.model_dir = model_dir
-        self.device = device
-        self.model = None
+        """
+        Initialize the inference service.
+
+        Args:
+            model_dir: Path to the model directory or HuggingFace model ID
+            device: Device to load the model on (e.g., 'cuda', 'cpu')
+        """
+        super().__init__(model_dir, device)
 
     def load_model(self):
-        """Load model"""
+        """
+        Load model with typer output.
+
+        Returns:
+            Loaded model instance
+        """
         if self.model is None:
             typer.echo(f"Loading model from {self.model_dir}...")
-            self.model = DepthAnything3.from_pretrained(self.model_dir).to(self.device)
+            # Call parent's load_model
+            super().load_model()
         return self.model
 
     def run_local_inference(
